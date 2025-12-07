@@ -374,7 +374,7 @@ DeviceNetworkEvents
 
 ---
 
-## 🟩 Flag 11 – Target of Lateral Movement
+## 🟩 Flag 11 – Bundling / Staging Artifacts
 
 **Objective:**
 
@@ -382,247 +382,160 @@ Identify the remote machine the attacker pivoted to next.
 
 **What to Hunt:**
 
-Remote system name embedded in command-line activity.
+File system events or operations that show grouping, consolidation, or packaging of gathered items.
 
 **Thought:**
 
-The attack is expanding. Recognizing lateral targets is key to containment.
+Staging is the practical step that simplifies exfiltration and should be correlated back to prior recon.
 
- 🕵️ **Drop the next compromised machine name**
+ 🕵️ **Provide the full folder path value where the artifact was first dropped into**
 
-Query used: same as flag 10
+Query used: 
+```
+DeviceFileEvents
+| where TimeGenerated between (datetime(2025-10-09) .. datetime(2025-10-17))
+| where DeviceName == "gab-intern-vm"
+| where InitiatingProcessAccountName != "system"
+| project 
+    TimeGenerated,
+    DeviceName,
+    FolderPath,
+    FileName, 
+    SHA256,
+    InitiatingProcessFileName,
+    InitiatingProcessAccountName,
+    InitiatingProcessCommandLine,
+    ActionType, InitiatingProcessParentFileName
+| where FileName contains "artifact"
+| sort by TimeGenerated desc
+```
 
-🧠 **Thought process:** In the previous flag I spotted lateral movement to a different machine as a scheduled task. I also noticed it at flag 2 where I looked into the SHA256.
+<img width="975" height="79" alt="image" src="https://github.com/user-attachments/assets/3e70e953-b448-4f4e-81f3-cfc326f9cc83" />
 
-<img width="800" src="https://github.com/user-attachments/assets/7af9ea77-36a4-48c3-8bfc-17522bb10838"/>
-
-**Answer: centralsrvr**
+**Answer: C:\Users\Public\ReconArtifacts.zip**
 
 ---
 
-## 🟩 Flag 12 – Lateral Move Timestamp
+## 🟩 Flag 12 – Outbound Transfer Attempt (Simulated)
 
 **Objective:**
 
-Pinpoint the exact time of lateral move to the second system.
+Identify attempts to move data off-host or test upload capability.
 
 **What to Hunt:**
 
-Execution timestamps of commands aimed at the new host.
+Network events or process activity indicating outbound transfers or upload attempts, even if they fail.
 
 **Thought:**
 
-Timing matters — it allows us to reconstruct the attack window on the second host.
+Succeeded or not, attempt is still proof of intent — and it reveals egress paths or block points.
 
- 🕵️ **When was the last lateral execution?**
+ 🕵️ **Provide the IP of the last unusual outbound connection**
 
 Query used:
 
 ```
-DeviceProcessEvents
-| where DeviceName == "michaelvm"
-| where ProcessCommandLine has "C2.ps1"
+DeviceNetworkEvents
+| where TimeGenerated between (datetime(2025-10-09) .. datetime(2025-10-17))
+| where InitiatingProcessAccountName contains "g4bri3lintern"
+| where InitiatingProcessFileName == "powershell.exe"
+| where DeviceName == "gab-intern-vm"
+| order by TimeGenerated asc
+| project TimeGenerated, ActionType, InitiatingProcessCommandLine, InitiatingProcessFileName, LocalIP, RemoteIP, RemoteUrl
 ```
 
-🧠 **Thought process:** From the previous flag, I gathered enough evidence to jump directly to the lateral movement execution with the above query.
+<img width="975" height="122" alt="image" src="https://github.com/user-attachments/assets/1022749e-c35b-444e-8a57-1303d5b0a889" />
 
-<img width="250" src="https://github.com/user-attachments/assets/67306d9b-279b-45a5-83a1-df6a47c916c1"/>
-
-**Answer: 2025-06-17T03:00:49.525038Z**
+**Answer: 100.29.147.161**
 
 ---
 
-## 🟩 Flag 13 – Sensitive File Access
+## 🟩 Flag 13 – Scheduled Re-Execution Persistence
 
 **Objective:**
 
-Reveal which specific document the attacker was after.
+Detect creation of mechanisms that ensure the actor’s tooling runs again on reuse or sign-in.
 
 **What to Hunt:**
 
-Verify if the attackers were after a similar file
+Registry or startup-area modifications that reference familiar execution patterns or repeat previously observed commands.
 
 **Thought:**
 
-The goal is rarely just control — it’s the data. Identifying what they wanted is vital.
+Redundant persistence increases resilience; find the fallback to prevent easy re-entry.
 
-**Hint:**
+ 🕵️ **What was the name of the registry value**
 
-1. Utilize previous findings
+Query used: Used previous queries
 
- 🕵️ **Provide the standard hash value associated with the file**
+**Answer: SupportToolUpdater**
+
+---
+
+## 🟩 Flag 14 – Autorun Fallback Persistence
+
+**Objective:**
+
+Spot lightweight autorun entries placed as backup persistence in user scope.
+
+**What to Hunt:**
+
+Registry or startup-area modifications that reference familiar execution patterns or repeat previously observed commands.
+
+**Thought:**
+
+Redundant persistence increases resilience; find the fallback to prevent easy re-entry.
+
+ 🕵️ **What was the name of the registry value**
+
+**Answer: RemoteAssistUpdater**
+
+---
+
+## 🟩 Flag 15 – Planted Narrative / Cover Artifact
+
+**Objective:**
+
+Identify a narrative or explanatory artifact intended to justify the activity.
+
+**What to Hunt:**
+
+Creation of explanatory files or user-facing artifacts near the time of suspicious operations; focus on timing and correlation rather than contents.
+
+ 🕵️ **Identify the file name of the artifact left behind**
 
 Query used:
 
 ```
 DeviceFileEvents
-| where DeviceName == "centralsrvr"
-| where FileName == "QuarterlyCryptoHoldings.docx"
-| project Timestamp, FileName, SHA256, FolderPath, InitiatingProcessFileName
+| where TimeGenerated between (datetime(2025-10-09) .. datetime(2025-10-17))
+| where InitiatingProcessAccountName contains "g4bri3lintern"
+| where InitiatingProcessFileName == "powershell.exe"
+| where DeviceName == "gab-intern-vm"
+| order by TimeGenerated asc
+| project TimeGenerated, ActionType, InitiatingProcessCommandLine, InitiatingProcessFileName, LocalIP, RemoteIP, RemoteUrl
 ```
 
-🧠 **Thought process:** I assumed, according to the hint, that the file they were after was the same one as in flag 3, so I jumped directly to that file and got the SHA256 of the QuarterlyCryptoHoldings.docx file.
-
-<img width="400" src="https://github.com/user-attachments/assets/58ec4895-d925-4468-b5b2-9c5109d7ffac"/>
-
-**Answer: b4f3a56312dd19064ca89756d96c6e47ca94ce021e36f818224e221754129e98**
-
----
-
-## 🟩 Flag 14 – Data Exfiltration Attempt
-
-**Objective:**
-
-Validate outbound activity by hashing the process involved.
-
-**What to Hunt:**
-
-Process hash related to exfiltration to common outbound services.
-
-**Thought:**
-
-Exfil isn’t just about the connection — process lineage shows who initiated the theft.
-
- 🕵️ **Provide the associated MD5 value of the exploit**
-
-Query used:
-
-```
-DeviceNetworkEvents
-| where DeviceName == "centralsrvr"
-| where RemoteIPType == "Public"
-| where RemoteUrl != ""
-| where InitiatingProcessCommandLine contains "exfiltrate"
-| project Timestamp, RemoteUrl, RemoteIP, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessMD5
-```
-
-🧠 **Thought process:** This flag was a little bit of a challenge, but I sifted through a lot of files throughout the hunt, where I found some exfiltratedata.ps1 executables, but was not sure if it was there for just noise or to throw me off. I played around with the KQL to lower the amount of logs shown and found that the above-mentioned executable was actually the one responsible for exfiltration.
-
-<img width="600" src="https://github.com/user-attachments/assets/cb9dd4b7-2e56-47c9-b6fb-09e902e1fcf6"/>
-
-**Answer: 2e5a8590cf6848968fc23de3fa1e25f1**
-
----
-
-## 🟩 Flag 15 – Destination of Exfiltration
-
-**Objective:**
-
-Identify final IP address used for data exfiltration.
-
-**What to Hunt:**
-
-Remote IPs of known unauthorized cloud services.
-
-**Thought:**
-
-Knowing where data went informs response and informs IR/containment scope.
-
- 🕵️ **Identify the IP of the last outbound connection attempt**
-
-Query used:
-
-```
-DeviceNetworkEvents
-| where DeviceName == "centralsrvr"
-| where RemoteIPType == "Public"
-| where RemoteUrl != ""
-| where RemoteUrl in~ (
-   "drive.google.com",
-   "dropbox.com",
-   "www.dropbox.com",
-   "pastebin.com",
-   "dw8wjz3q0i4gj.cloudfront.net",
-   "o.ss2.us"
-)
-| project Timestamp, DeviceName, InitiatingProcessCommandLine, RemoteUrl, RemoteIP, InitiatingProcessSHA256
-| sort by Timestamp desc
-```
-
-🧠 **Thought process:** I filtered for the remote URLs that I noticed could be a third-party unauthorized cloud service, and I only had 4 IPs to choose from, and in the end, it was the IP of pastebin.com
-
-<img width="600" src="https://github.com/user-attachments/assets/4db9f414-56df-4e73-b30c-cd5d664bae8d"/>
-
-**Answer: 104.22.69.199**
-
----
-
-## 🟩 Flag Flag 16 – PowerShell Downgrade Detection
-
-**Objective:**
-
-Spot PowerShell version manipulation to avoid logging.
-
-**What to Hunt:**
-
-`-Version 2` execution flag in process command lines.
-
-**Thought:**
-
-This signals AMSI evasion — it’s a red flag tactic to bypass modern defenses.
-
- 🕵️ **When was a downgrade attempt executed?**
-
-Query used:
-
-```
-DeviceProcessEvents
-| where DeviceName == "centralsrvr"
-| where ProcessCommandLine contains "-Version 2"
-```
-
-🧠 **Thought process:** This was a pretty straightforward flag since the hints gave away what to look for. Once I queried the -Version 2 in the process command line, I had my answer.
-
-<img width="300" src="https://github.com/user-attachments/assets/a501e571-2329-48cf-8df4-edbbb27855ef"/>
-
-**Answer: 2025-06-18T10:52:59.0847063Z**
-
----
-
-## 🟩 Flag 17 – Log Clearing Attempt
-
-**Objective:**
-
-Catch attacker efforts to cover their tracks.
-
-**What to Hunt:**
-
-Use of `wevtutil cl Security` to clear event logs.
-
-**Thought:**
-
-Cleaning logs shows intent to persist without a trace — it's often one of the final steps before attacker exit.
-
- 🕵️ **Identify the process creation date**
-
-Query used:
-
-```
-DeviceProcessEvents
-| where DeviceName == "centralsrvr"
-| where ProcessCommandLine has_any ("wevtutil", "cl Security")
-```
-
-🧠 **Thought process:** The last flag was, at a glance, very simple, but it had a little twist to it. I found what I was looking for immediately, but I had trouble giving in the right time. The question was set as "identifying the process creation time" and not just a Timestamp. At a glance, these two times look the same, so I always just posted the Timestamp time, but after countless hours of questioning myself, I realized what the question is actually asking for.
-
-<img width="250" src="https://github.com/user-attachments/assets/460a7771-351e-4171-9ef6-dbf9118880ad"/>
-
-**Answer: 2025-06-18T10:52:33.3030998Z**
+**Answer: SupportChat_log.lnk**
 
 ---
 
 ## ✅ Conclusion
 
-The attacker leveraged native tools and LOLBins to evade detection, accessed high-value documents, and stealthily exfiltrated them while maintaining persistence. The clean logs indicate deliberate obfuscation and anti-forensic effort.
+This “support session” was a full intrusion, not a misunderstanding.
 
-🛡️ **Recommendations**
+The attacker gained an initial foothold on gab-intern-vm via “desk/help/support/tool”-style binaries launched from the Downloads folder, then immediately shifted into living-off-the-land behavior using native binaries like powershell.exe, cmd.exe, wmic, schtasks.exe, and tasklist.exe. They:
 
-	•	Block LOLBins like bitsadmin, mshta via AppLocker or WDAC
-	•	Enable script block logging and AMSI
-	•	Monitor for PowerShell downgrade attempts (-Version 2)
-	•	Watch for registry changes in autorun paths
-	•	Alert on suspicious scheduled task creation
-	•	Monitor public cloud uploads (e.g. Dropbox, Pastebin)
+- Ran recon of the host and user context (whoami, clipboard probing, task and disk enumeration).
 
+- Mapped storage with wmic logicaldisk get name,freespace,size.
 
-“Attackers hide in noise. But sometimes, they hide in silence.”
+- Validated outbound connectivity (e.g., www.msftconnecttest.com) before reaching out to an unusual IP: 100.29.147.161.
+
+- Bundled local findings into C:\Users\Public\ReconArtifacts.zip for staging and potential exfiltration.
+
+- Established persistence via scheduled/autorun mechanisms (e.g., RemoteAssistUpdater-style registry entries and Defender tamper artifacts).
+
+- Planted SupportChat_log.lnk as a narrative cover to make activity look like benign remote assistance.
+
+The activity chain shows clear intent, capability, and stealth: initial access, recon, staging, exfil path testing, persistence, and an attempted “clean” storyline. The relative lack of noisy malware and the reliance on LOLBins and clean logs indicates a deliberate anti-forensic approach.
